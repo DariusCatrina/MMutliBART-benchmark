@@ -112,7 +112,7 @@ class MultiBART(BartForConditionalGeneration):
         
         lm_logits = self.lm_head(decoder_outputs[0]) + self.logits_bias # [4, 128, 50265]
         if(self.check_dim == 1):
-            print(lm_logits.size())
+            print(lm_logits.size()) # batch_size x target_len x vocab_size
             self.check_dim = 0
 
         masked_lm_loss = None
@@ -132,6 +132,9 @@ class MultiBART(BartForConditionalGeneration):
             encoder_hidden_states=encoder_outputs.hidden_states,
             encoder_attentions=encoder_outputs.attentions,
         )
+
+    # @classmethod
+    # def generate():
 
 
 

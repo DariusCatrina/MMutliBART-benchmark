@@ -52,18 +52,18 @@ def load_dataloaders(bart_seq_len, seq_len, batch_size, dataset_name="gov_report
 
 
 def compute_metrics(eval_preds):
-    preds, _ = eval_preds
+    preds, labels = eval_preds
 
-    # apply argmax to get the correct predictions
-    preds = np.argmax(preds, axis=-1)
+    # # apply argmax to get the correct predictions
+    # preds = np.argmax(preds, axis=-1)
 
-    # decode the model output
-    decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
+    # # decode the model output
+    # decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
     
-    raw_targets = [validation_dataset.dataset['output'][i][:] for i in range(len(validation_dataset.dataset[:]['output']))]
+    # raw_targets = [validation_dataset.dataset['output'][i][:] for i in range(len(validation_dataset.dataset[:]['output']))]
        
     #compute rouge
-    scores = compute_rouge(decoded_preds, raw_targets)
+    scores = compute_rouge(preds, labels)
 
 
     scores["rouge_mean"] = (scores["rouge1"] * scores["rouge2"] * scores["rougeL"]) ** (1.0 / 3.0)
