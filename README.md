@@ -6,9 +6,9 @@ Multiple Encoder/ Multiple Decoder type transformer model for BART, designed for
 
 The input/target is chunked/preproccesed/labeld and send through the model.
 <pre>
-[Tokenized Chunk] -> Encoder_1 |
-[Tokenized Chunk] -> Encoder_1 |                            [Embedded chunk] -> Decoder |
-[Tokenized Chunk] -> Encoder_1 | -> [Concat embeddings] ->  [Embedded chunk] -> Decoder | -> [Generated sequence]
-...                            |                            [Embedded chunk] -> Decoder |
-[Tokenized Chunk] -> Encoder_1 | 
+[Tokenized Chunk] -> Encoder |
+[Tokenized Chunk] -> Encoder |                            [Embedded chunk] -> Decoder |
+[Tokenized Chunk] -> Encoder | -> [Concat embeddings] ->  [Embedded chunk] -> Decoder | -> [Generated sequence]
+...                          |                            [Embedded chunk] -> Decoder |
+[Tokenized Chunk] -> Encoder | 
 </pre>
