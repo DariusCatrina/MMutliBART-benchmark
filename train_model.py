@@ -1,8 +1,8 @@
 from trainer import MMultiBART_Trainer, populate_config_file
 from torch.utils.data import DataLoader
 from Data.Summarization import Summarization_Wrapper
-from MultiBART.multibart import MultiBART
-from MultiBART.MultiBARTEncoder import MultiBARTEncoder
+from MMultiBART.multibart import MultiBART as MMultiBART
+#from MultiBART.MultiBARTEncoder import MultiBARTEncoder
 
 from transformers import BartForConditionalGeneration, BartTokenizerFast
 
@@ -17,7 +17,7 @@ training_dataset=0
 validation_dataset=0
 tokenizer = BartTokenizerFast.from_pretrained("facebook/bart-base")
 
-def load_datasets(bart_seq_len, seq_len, batch_size, dataset_name="gov_report"):
+def load_datasets(bart_seq_len, seq_len, batch_size, decoder_length, num_decoders, dataset_name="gov_report"):
     global training_dataset, validation_dataset
     training_dataset = Summarization_Wrapper(dataset_name = dataset_name, 
                                              split='train',
@@ -25,24 +25,24 @@ def load_datasets(bart_seq_len, seq_len, batch_size, dataset_name="gov_report"):
                                              seq_len=seq_len,
                                              fast_tokenizer=True,
                                              tensor_type='pt',
-                                             num_decoders=1)
-    training_dataset.target_len = 512
+                                             num_decoders=num_decoders)
+    training_dataset.target_len = decoder_length
     validation_dataset = Summarization_Wrapper(dataset_name = dataset_name, 
                                              split='validation',
                                              bart_seq_len=bart_seq_len,
                                              seq_len=seq_len,
                                              fast_tokenizer=True,
                                              tensor_type='pt',
-                                             num_decoders=1)
+                                             num_decoders=num_decoders)
 
-    validation_dataset.target_len = 512
+    validation_dataset.target_len = decoder_length
     return (training_dataset, validation_dataset)
 
 
 
-def load_dataloaders(bart_seq_len, seq_len, batch_size, dataset_name="gov_report"):
+def load_dataloaders(bart_seq_len, seq_len, batch_size, decoder_length, num_decoders, dataset_name="gov_report"):
 
-    training_dataset, validation_dataset = load_datasets(bart_seq_len, seq_len, batch_size, dataset_name="gov_report")
+    training_dataset, validation_dataset = load_datasets(bart_seq_len, seq_len, batch_size, dataset_name="gov_report", decoder_length=decoder_length, num_decoders=num_decoders)
 
     training_dataloader = DataLoader(training_dataset, batch_size=batch_size, shuffle=True)
     validation_dataloader = DataLoader(validation_dataset, batch_size=batch_size, shuffle=False)
@@ -53,15 +53,6 @@ def load_dataloaders(bart_seq_len, seq_len, batch_size, dataset_name="gov_report
 
 def compute_metrics(eval_preds):
     preds, labels = eval_preds
-
-    # # apply argmax to get the correct predictions
-    # preds = np.argmax(preds, axis=-1)
-
-    # # decode the model output
-    # decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
-    
-    # raw_targets = [validation_dataset.dataset['output'][i][:] for i in range(len(validation_dataset.dataset[:]['output']))]
-       
     #compute rouge
     scores = compute_rouge(preds, labels)
 
@@ -71,26 +62,28 @@ def compute_metrics(eval_preds):
     return scores
 
 
-def main(seq_len, batch_size, numbers_of_decoders, bart_seq_len, wandb_proj, wandb_ent):
+def main(seq_len, batch_size, number_of_decoders, decoder_length, bart_seq_len, wandb_proj, wandb_ent):
     gpu = '|A6000'
-    name = 'MMultiBART|'+str(bart_seq_len)+ '/'+str(seq_len)+'|'+'b'+str(batch_size)+gpu
+    name = 'MMultiBART|E:'+str(bart_seq_len)+ '/'+str(seq_len)+'|D:'+str(decoder_length)+'/'+str(number_of_decoders)+'|b'+str(batch_size)+gpu
+    print(name)
     print('WANDB INIT')
     wandb.init(project=wandb_proj, entity=wandb_ent, name=name)
 
 
     print('MODEL INIT')
     PRETRAINED_BART = BartForConditionalGeneration.from_pretrained("facebook/bart-base")   
-    model = MultiBART()
+    model = MMultiBART(encoder_len=bart_seq_len, decoder_len=decoder_length, num_decoders=number_of_decoders, tokenizer=tokenizer)
     
     model.apply_pretrained_weights(PRETRAINED_BART)
-    MultiBARTEncoder.bart_seq_len = bart_seq_len
+    # MultiBARTEncoder.bart_seq_len = bart_seq_len
     
 
     print('DATA INIT')
     #Set the training/eval dataloaders for the trainer class
-    training_dataloader, validation_dataloader = load_dataloaders(bart_seq_len=bart_seq_len,batch_size=batch_size, seq_len=seq_len)
+    training_dataloader, validation_dataloader = load_dataloaders(bart_seq_len=bart_seq_len,batch_size=batch_size, seq_len=seq_len, decoder_length=decoder_length, num_decoders=number_of_decoders)
     MMultiBART_Trainer.train_dataloader = training_dataloader
     MMultiBART_Trainer.validation_dataloader = validation_dataloader
+    MMultiBART_Trainer.number_of_decoders = number_of_decoders
 
     print('TRAINING ARGS INIT')
     seq2seq_config = populate_config_file()
@@ -102,7 +95,6 @@ def main(seq_len, batch_size, numbers_of_decoders, bart_seq_len, wandb_proj, wan
         compute_metrics = compute_metrics
     )
     
-
     if seq2seq_config.do_train == True:
         train_result = trainer.train(ignore_keys_for_eval=["past_key_values", "encoder_last_hidden_state"])
         trainer.save_model()
@@ -134,6 +126,8 @@ if __name__ == '__main__':
         help='Number of Decoders')
     parser.add_argument("--bart_seq_len", type=int,
         help='Bart sequence length(i.e. 256, 512, 1024)')
+    parser.add_argument("--decoder_length", type=int,
+        help='Length fo the target per decoder(i.e. 128, 512, etc.)')
     parser.add_argument("--wandb_proj", type=str, default='MultiBART(MEMD)',
         help='Optional argument for name of the project on wandb')
     parser.add_argument("--wandb_ent", type=str, default='darius-catrina',
@@ -141,7 +135,7 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    main(seq_len=args.seq_len, batch_size=args.bsz, numbers_of_decoders=args.number_of_decoders, bart_seq_len=args.bart_seq_len, wandb_proj=args.wandb_proj, wandb_ent=args.wandb_ent)
+    main(seq_len=args.seq_len, batch_size=args.bsz, number_of_decoders=args.number_of_decoders, bart_seq_len=args.bart_seq_len, wandb_proj=args.wandb_proj, wandb_ent=args.wandb_ent, decoder_length=args.decoder_length)
 
 
 

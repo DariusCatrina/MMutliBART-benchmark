@@ -22,6 +22,7 @@ import json
 class MMultiBART_Trainer(Seq2SeqTrainer):
     train_dataloader : DataLoader = None
     validation_dataloader : DataLoader = None
+    number_of_decoders : int = None
 
     def get_train_dataloader(self) -> DataLoader:
         if MMultiBART_Trainer.train_dataloader == None:
@@ -32,7 +33,6 @@ class MMultiBART_Trainer(Seq2SeqTrainer):
         if MMultiBART_Trainer.validation_dataloader == None:
             raise "Invalid/Null evaluation dataloader"
         return MMultiBART_Trainer.validation_dataloader
-
 
     def evaluation_loop(self, dataloader: DataLoader, description: str, prediction_loss_only: bool = None, ignore_keys = None, metric_key_prefix: str = "eval",
     ) -> EvalLoopOutput:
@@ -66,13 +66,13 @@ class MMultiBART_Trainer(Seq2SeqTrainer):
         for step, batch in enumerate(dataset_tqdm):
             batch = self.to_device(batch)
             with torch.no_grad():
-                loss = model(input_ids=batch['input_ids'], attention_mask=batch['attention_mask'], labels=batch['labels'], decoder_attention_mask=batch['decoder_attention_mask']).loss
+                loss = model(input_ids=batch['input_ids'], attention_mask=batch['attention_mask'], labels=batch['labels'], decoder_attention_mask=batch['decoder_attention_mask'], loss_mask=batch['loss_mask'], num_tokens_ignored=batch['num_tokens_ignored']).loss
                 loss = loss.detach().cpu().numpy()
                 
             
-                outputs = model.generate(inputs=batch['input_ids'],
-                                    attention_mask=batch['attention_mask'], max_length=self.args.generation_max_length, num_beams=self.args.generation_num_beams)
-                predictions = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
+                predictions = model.generate(inputs=batch['input_ids'],
+                                    attention_mask=batch['attention_mask'], max_length=self.args.generation_max_length, min_length=self.args.generation_max_length, num_beams=self.args.generation_num_beams, num_decoders=MMultiBART_Trainer.number_of_decoders)
+                #predictions = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
                 # predictions = predictions.detach.cpu.numpy()
 
 
