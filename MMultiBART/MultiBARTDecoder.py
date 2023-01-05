@@ -7,6 +7,8 @@ from typing import List, Optional, Tuple, Union
 
 from transformers import BartTokenizerFast
 
+import math
+
 tokenizer = BartTokenizerFast.from_pretrained("facebook/bart-base")
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
@@ -55,18 +57,21 @@ class MultiBARTDecoder(BartDecoder):
         
 
         if input_ids != None:
+            batch_size, _ = input_ids.size()  # batch_size x dec_len*num_decoders
+            _, seq_len, hidden_size = encoder_hidden_states.size()
 
-            batch_size, _ = input_ids.size()
-            decoder_output = torch.zeros(batch_size, self.num_decoders*self.decoder_len, 768).to(device)
+            #encoded_ids: batch_size x seq_len x hidden_size: 5 x (4*128), 5 x 4096 x 768
+            # decoder_output = torch.zeros(batch_size, self.num_decoders*self.decoder_len, 768).to(device)
 
-            input_ids = torch.reshape(input_ids, (batch_size, self.num_decoders, self.decoder_len))
-            attention_mask = torch.reshape(attention_mask, (batch_size, self.num_decoders, self.decoder_len))
+            input_ids = torch.reshape(input_ids, (batch_size * self.num_decoders, self.decoder_len))
+            attention_mask = torch.reshape(attention_mask, (batch_size *self.num_decoders, self.decoder_len))
+            encoder_hidden_states = torch.reshape(encoder_hidden_states, (batch_size *self.num_decoders, seq_len//self.num_decoders, hidden_size))
+            encoder_attention_mask = torch.reshape(encoder_attention_mask, (batch_size *self.num_decoders, seq_len//self.num_decoders))
+
             #[2, 4, 128] -> [8, 128]
-           
-            for i in range(self.num_decoders):
-                output = super().forward(
-                        input_ids=input_ids[:,i,:],
-                        attention_mask=attention_mask[:,i,:],
+            output = super().forward(
+                        input_ids=input_ids,
+                        attention_mask=attention_mask,
                         encoder_hidden_states=encoder_hidden_states,
                         encoder_attention_mask=encoder_attention_mask,
                         head_mask=head_mask,
@@ -76,9 +81,25 @@ class MultiBARTDecoder(BartDecoder):
                         use_cache=use_cache,
                         output_attentions=output_attentions,
                         output_hidden_states=output_hidden_states,
-                        return_dict=return_dict,
-                ) 
-                decoder_output[:,i:i+self.decoder_len, :] = output.last_hidden_state
+                        return_dict=return_dict)
+
+            decoder_output = torch.reshape(output.last_hidden_state, (batch_size, self.num_decoders*self.decoder_len, 768)).to(device)
+            # for i in range(self.num_decoders):
+            #     output = super().forward(
+            #             input_ids=input_ids[:,i,:],
+            #             attention_mask=attention_mask[:,i,:],
+            #             encoder_hidden_states=encoder_hidden_states,
+            #             encoder_attention_mask=encoder_attention_mask,
+            #             head_mask=head_mask,
+            #             cross_attn_head_mask=cross_attn_head_mask,
+            #             past_key_values=past_key_values,
+            #             inputs_embeds=inputs_embeds,
+            #             use_cache=use_cache,
+            #             output_attentions=output_attentions,
+            #             output_hidden_states=output_hidden_states,
+            #             return_dict=return_dict,
+            #     ) 
+            #     decoder_output[:,i:i+self.decoder_len, :] = output.last_hidden_state
 
            
         return BaseModelOutputWithPastAndCrossAttentions(
