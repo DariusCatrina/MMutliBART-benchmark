@@ -1,4 +1,4 @@
-# MMultiBART for long contex
+# MMultiBART for long context
 
 ## Arhitecture and motivation
 
