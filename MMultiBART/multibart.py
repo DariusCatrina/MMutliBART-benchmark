@@ -22,13 +22,27 @@ class MultiBART(BartForConditionalGeneration):
     def __init__(self, encoder_len, decoder_len, num_decoders, tokenizer):
         super(MultiBART, self).__init__(bart_config)       
         self.tokenizer = tokenizer
+        self.num_decoders = num_decoders
         self.init_backbone(encoder_len, decoder_len, num_decoders)
-        
+        self.prefixes = self._preper_chunk_prefix_generation()
 
         self.criterion = nn.CrossEntropyLoss(reduction='none')
         self.to(device)
 
         
+    def _preper_chunk_prefix_generation(self):
+        prefixes = []
+        for i in range(self.num_decoders):
+            prefix = '</s><s>Chunk: ' + str(i) + ' '
+            prefix_id = self.tokenizer(prefix, add_special_tokens=False,
+                                      return_attention_mask=False, 
+                                      return_token_type_ids=False, 
+                                      return_tensors='pt')['input_ids'][0]
+
+            prefix_dict = {i: id for i, id in enumerate(prefix_id)} 
+            prefixes.append(prefix_dict)
+
+        return prefixes
 
     def get_encoder(self):
         return self.encoder
@@ -137,20 +151,14 @@ class MultiBART(BartForConditionalGeneration):
         )
 
 
-    def generate(self, inputs, attention_mask, max_length, min_length, num_beams, num_decoders, **kwargs):
+    def generate(self, inputs, attention_mask, max_length, min_length, num_beams, **kwargs):
         
         batch_size, _ = inputs.size()
         final_output = [[] for _ in range(batch_size)]
 
         self.decoder.do_generate = True
-        for i in range(num_decoders):
-            prefix = '</s><s>Chunk: ' + str(i) + ' '
-            prefix_id = self.tokenizer(prefix, add_special_tokens=False,
-                                      return_attention_mask=False, 
-                                      return_token_type_ids=False, 
-                                      return_tensors='pt')['input_ids'][0]
-
-            prefix_dict = {i: id for i, id in enumerate(prefix_id)}  
+        for i in range(self.num_decoders):
+            prefix_dict = self.prefixes[i]
             outputs = super().generate(inputs=inputs, attention_mask=attention_mask, max_length=max_length, min_length=min_length, num_beams=num_beams, forced_decoder_ids=prefix_dict, **kwargs)
             decoded_batch = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)#['Chunk : 0 - Element 1', []]
             
